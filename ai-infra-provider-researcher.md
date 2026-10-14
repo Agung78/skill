@@ -35,6 +35,19 @@ Scan the repository (`package.json`, `.env.example`, `docker-compose.yml`, ORM s
 
 ---
 
+## Phase 1.5: The Ponytail Ladder (Collapse Before You Shop)
+Stop at the first rung that holds for the calculated load. Do NOT search providers for a layer you can delete or merge:
+1. **Does this layer need to exist separately? (YAGNI)**
+   - Background queue (`BullMQ` / `Redis`) with low job volume? -> Collapse into Postgres (`pg-boss` or `FOR UPDATE SKIP LOCKED`).
+   - Separate vector DB (`Pinecone` / `Qdrant`) under 1M vectors? -> Collapse into existing PostgreSQL via `pgvector`.
+   - Separate Frontend + Backend hosts causing cross-cloud egress? -> Co-locate on the same PaaS private network or single VPS.
+2. **Does `pgvector` even need an HNSW index yet?**
+   - Under 20,000 vectors, sequential scan or a lightweight index avoids multi-GB RAM bloat entirely. State this if true.
+3. **Single-Box Short-Circuit:**
+   - If total calculated RAM is under 4 GB, RPS is under 100, and high availability is not explicitly required, compare **1 Co-located PaaS vs. 1 Lean VPS** instead of running a 12-provider matrix.
+
+---
+
 ## Phase 2: Bandwidth, RAM & Vector Sizing Math
 Calculate and explicitly state these metrics before searching providers:
 
@@ -118,3 +131,16 @@ Run `WebSearch` using queries tailored to the detected stack:
 - **Selected Providers per Layer:** (e.g., Frontend on X + Backend on Y + Postgres on Z)
 - **Total Combined Monthly Cost:** `$XX.XX / month`
 - **Why this combination wins for your exact bandwidth & latency.**
+
+### 5. Ponytail Debt & Scale Ledger (Ceilings & Upgrade Triggers)
+For every lean tier or architectural simplification chosen, output a strict ceiling and upgrade trigger:
+
+| Layer / Shortcut Chosen | What Was Skipped | Hard Ceiling (When It Breaks) | Upgrade Trigger (When to Move) |
+| :--- | :--- | :--- | :--- |
+| e.g., Single Hetzner CPX21 (4GB RAM) for API + Postgres | Managed HA failover & separate DB host | ~350k `1536d` vectors in HNSW (~3.1GB RAM) or single-node disk failure | RAM sustained above 80%, `pgvector` index exceeds 2.5GB, or revenue requires 99.95% SLA |
+| e.g., Neon Free/Launch Scale-to-Zero | Dedicated 24/7 compute instance | Cold-start latency (~300–500ms) or 24/7 background worker keeping CU active | Adding cron jobs running more than once every 5 mins (switches bill from ~$5 to ~$40+/mo) |
+
+## Safety Boundary (Lazy, Never Negligent)
+Never recommend a cheaper/self-hosted tier by cutting data durability or trust boundaries:
+- **Self-Hosted DB Rule:** Only recommend VPS Docker Postgres if the cost/setup calculation includes automated daily offsite backups (e.g., `pgBackRest` or `wal-g` to Cloudflare R2 / S3) and firewall-locked private networking.
+- **Connection Safety:** Serverless compute + Postgres MUST include a connection pooler (`PgBouncer` / `Supavisor`) in the spec.
